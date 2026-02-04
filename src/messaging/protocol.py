@@ -15,26 +15,57 @@ class Command:
 
 
 def parse_command(line: str) -> Command:
-    """
-    Parse a client->server line into a Command.
-    We split only on spaces to preserve message text as-is.
-    """
     line = line.rstrip("\n")
     if not line:
         raise ValueError("empty line")
-    parts = line.split(" ", 2)
-    name = parts[0].upper()
-    if name == "HELLO":
-        if len(parts) != 2 or not parts[1]:
-            raise ValueError("HELLO requires <username>")
-        return Command(name, (parts[1],))
+    head, *rest = line.split(" ", 1)
+    name = head.upper()
+
     if name == "MSG":
-        if len(parts) < 3 or not parts[1] or not parts[2]:
+        if not rest:
             raise ValueError("MSG requires <target_username> <message>")
-        return Command(name, (parts[1], parts[2]))
+        parts = rest[0].split(" ", 1)
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise ValueError("MSG requires <target_username> <message>")
+        return Command(name, (parts[0], parts[1]))
+
+    tokens = [name]
+    if rest:
+        tokens.extend(rest[0].split(" "))
+
+    if name == "HELLO":
+        if len(tokens) != 2 or not tokens[1]:
+            raise ValueError("HELLO requires <version>")
+        return Command(name, (tokens[1],))
+    if name == "AUTH":
+        if len(tokens) != 3 or not tokens[1] or not tokens[2]:
+            raise ValueError("AUTH requires <username> <password>")
+        return Command(name, (tokens[1], tokens[2]))
     if name == "LIST":
+        if len(tokens) != 1:
+            raise ValueError("LIST takes no argument")
+        return Command(name, ())
+    if name == "HISTORY":
+        if len(tokens) not in {2, 3} or not tokens[1]:
+            raise ValueError("HISTORY requires <username> [limit]")
+        if len(tokens) == 3 and not tokens[2].isdigit():
+            raise ValueError("HISTORY limit must be numeric")
+        return Command(name, tuple(tokens[1:]))
+    if name == "READ":
+        if len(tokens) != 2 or not tokens[1].isdigit():
+            raise ValueError("READ requires <message_id>")
+        return Command(name, (tokens[1],))
+    if name in {"BLOCK", "UNBLOCK"}:
+        if len(tokens) != 2 or not tokens[1]:
+            raise ValueError(f"{name} requires <username>")
+        return Command(name, (tokens[1],))
+    if name == "PING":
+        if len(tokens) != 1:
+            raise ValueError("PING takes no argument")
         return Command(name, ())
     if name == "QUIT":
+        if len(tokens) != 1:
+            raise ValueError("QUIT takes no argument")
         return Command(name, ())
     raise ValueError(f"unknown command: {name}")
 
@@ -47,10 +78,21 @@ def format_info(message: str) -> str:
     return f"INFO {message}\n"
 
 
-def format_error(reason: str) -> str:
-    return f"ERROR {reason}\n"
+def format_error(reason: str, code: str = "GENERIC") -> str:
+    return f"ERROR {code} {reason}\n"
 
 
-def format_from(username: str, message: str) -> str:
-    return f"FROM {username} {message}\n"
+def format_from(message_id: int, username: str, timestamp: int, message: str) -> str:
+    return f"FROM {message_id} {username} {timestamp} {message}\n"
 
+
+def format_delivered(message_id: int) -> str:
+    return f"DELIVERED {message_id}\n"
+
+
+def format_read(message_id: int, username: str) -> str:
+    return f"READ {message_id} {username}\n"
+
+
+def format_pong() -> str:
+    return "PONG\n"

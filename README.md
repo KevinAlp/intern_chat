@@ -1,46 +1,108 @@
-# Internal TCP Chat (WIP)
+# Internal TCP Chat
 
-## Présentation
+Serveur/client TCP en Python pour messagerie privée 1:1, avec authentification, persistance SQLite, commandes de modération, accusés de réception/lecture, et TLS optionnel.
 
-Ce projet est un **serveur de messagerie interne** en Python, basé sur une architecture client/serveur TCP.
+## Fonctionnalités
 
-L’objectif est de comprendre et mettre en pratique les bases du réseau côté système :
-- sockets TCP
-- gestion de plusieurs clients
-- protocole applicatif simple
-- gestion des erreurs réseau
-- arrêt propre d’un serveur
+- authentification `AUTH` (création auto du compte à la première connexion)
+- messages privés `MSG <user> <message>`
+- messages hors-ligne (stockés puis livrés à la reconnexion)
+- accusés `DELIVERED` et `READ`
+- historique `HISTORY`
+- blocage/déblocage d’utilisateurs (`BLOCK` / `UNBLOCK`)
+- limitation de débit anti-spam côté serveur
+- notifications présence (`INFO user_online`, `INFO user_offline`)
+- transport TLS optionnel
 
-Le projet est pensé comme une **base** pour aller plus tard vers de la communication audio.
+## Lancer le serveur
 
----
+```bash
+python3 -m src.messaging.server --host 0.0.0.0 --port 9000 --db-path ./data/chat.db
+```
 
-## Ce que fait le projet pour le moment
+Avec TLS :
 
-- un serveur TCP accepte plusieurs clients
-- chaque client choisit un nom d’utilisateur
-- les utilisateurs peuvent s’envoyer des messages privés
-- le serveur route les messages entre les clients
-- les connexions et déconnexions sont loggées
-- arrêt propre du serveur avec Ctrl+C
+```bash
+python3 -m src.messaging.server \
+  --host 0.0.0.0 \
+  --port 9000 \
+  --db-path ./data/chat.db \
+  --tls-cert ./certs/server.crt \
+  --tls-key ./certs/server.key
+```
 
----
+## Lancer le client
 
-## Ce qui va être fait :
+Sans TLS :
 
-- pas de chiffrement
-- pas de base de données
+```bash
+python3 -m src.messaging.client --host 127.0.0.1 --port 9000 alice
+```
+
+Avec TLS :
+
+```bash
+python3 -m src.messaging.client --tls --ca-cert ./certs/server.crt --host 127.0.0.1 --port 9000 alice
+```
+
+Pour test local avec certificat autosigné non vérifié :
+
+```bash
+python3 -m src.messaging.client --tls --tls-insecure --host 127.0.0.1 --port 9000 alice
+```
+
+Le client demande le mot de passe en interactif si `--password` n’est pas fourni.
+
+## Protocole v1
+
+Tous les messages sont des lignes UTF-8 terminées par `\n`.
+
+### Client → serveur
+
+- `HELLO 1`
+- `AUTH <username> <password>`
+- `MSG <target_username> <message>`
+- `LIST`
+- `HISTORY <username> [limit]`
+- `READ <message_id>`
+- `BLOCK <username>`
+- `UNBLOCK <username>`
+- `PING`
+- `QUIT`
+
+### Serveur → client
+
+- `OK <message>`
+- `ERROR <code> <reason>`
+- `INFO <message>`
+- `FROM <message_id> <sender> <timestamp> <message>`
+- `DELIVERED <message_id>`
+- `READ <message_id> <username>`
+- `PONG`
+
+## Commandes interactives client
+
+Le client accepte des raccourcis :
+
+- `/msg <user> <message>`
+- `/list`
+- `/history <user> [limit]`
+- `/block <user>`
+- `/unblock <user>`
+- `/ping`
+- `/quit`
+- `/help`
+
+Les commandes protocole brutes (`MSG ...`, `LIST`, etc.) fonctionnent aussi.
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+## Limites actuelles
+
+- pas de chiffrement de bout en bout (le serveur peut lire les messages)
+- gestion des mots de passe simple (PBKDF2, sans rotation/2FA)
 - pas d’interface graphique
-- pas de persistance des messages
-- pas encore d’audio
-
-Le but est de rester concentré sur le réseau et la logique serveur.
-
----
-
-## Protocole utilisé
-
-Le protocole est volontairement simple et textuel.  
-Tous les messages sont en UTF-8 et terminés par un retour à la ligne.
-
-### Commandes client → serveur
